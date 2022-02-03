@@ -1,0 +1,199 @@
+# takes up all of space, but slower:
+s = 3.5
+# faster, but lower quality:
+# s=1
+
+# differences are for rib facets
+body = difference(difference(difference(difference(cardioid_prism(
+    *transform(
+        x, y, z,
+        translate=[.5, .5, .5],
+        scale=[.12, .12 + .0625, .25 + .25]
+    ),
+    .2 * s,
+    .06 * s, .3 * s
+), sphere(
+    *transform(
+        x, y, z,
+        scale=[1, .75, .75],
+        translate=[.5 - .025 * s, .5 - .07 * s, .5 + .03 * s],
+    ),
+    .01 * s,
+)),
+    sphere(
+        *transform(
+            x, y, z,
+            scale=[1, .75, .75],
+            translate=[.5 - .025 * s, .5 + .07 * s, .5 + .03 * s],
+        ),
+        .01 * s,
+    )
+),
+    sphere(
+        *transform(
+            x, y, z,
+            scale=[1, .75, .75],
+            translate=[.5 - .025 * s, .5 + .07 * s, .5 - .03 * s],
+        ),
+        .01 * s,
+    )
+),
+    sphere(
+        *transform(
+            x, y, z,
+            scale=[1, .75, .75],
+            translate=[.5 - .025 * s, .5 - .07 * s, .5 - .03 * s],
+        ),
+        .01 * s,
+    )
+)
+vertebral_foramen = torus(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 4.0, .5, .5],
+        scale=[.2, .2 + .0625, .25 + .1]),
+    .15 * s,
+    .04 * s
+)
+transverse_process_r = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 1.5, .5 - .07 * s, .5],
+        euler_rotate=[-pi / 3.0, 0, pi / 4.0],
+    ),
+    .005 * s,
+    .05 * s, .005 * s, .02 * s
+)
+transverse_process_l = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 1.5, .5 + .07 * s, .5],
+        euler_rotate=[pi / 3.0, 0, -pi / 4.0],
+    ),
+    .005 * s,
+    .05 * s, .005 * s, .02 * s
+)
+spinous_process = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .085 * s, .5, .5 - .05 * s / 2.0],
+        euler_rotate=[0, pi / 6.0, 0],
+
+    ),
+    .005 * s,
+    .05 * s, .005 * s, .018 * s
+)
+
+spinous_process_base = polygon_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .075 * s, .5, .5 - .05 * s / 2.0 + .005 * s],
+        euler_rotate=[0, pi / 6.0, 0],
+        scale=[.035 * s, .035 * s, 1]
+    ),
+    [(-1, 0), (1, 2), (1, -2)]
+    , .017 * s
+
+)
+
+superior_facet_l = difference(
+    rounded_rect_prism(
+        *transform(
+            x, y, z,
+            translate=[.5 + .0625 * s / 2.0, .5 + .04 * s, .5 + .015 * s],
+            euler_rotate=[pi / 2.0, 0, -pi / 3.0],
+        ),
+        .005 * s,
+        .02 * s, .01 * s, .02 * s
+    ), sphere(
+        *transform(
+            x, y, z,
+            scale=[1, 1, .5],
+            translate=[.5 + .0625 * s / 2.0, .5 + .04 * s, .5 + .02 * s],
+            euler_rotate=[0, pi / 4.0, 0],
+        ),
+        .01 * s,
+    ))
+superior_facet_r = difference(rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 2.0, .5 - .04 * s, .5 + .015 * s],
+        euler_rotate=[-pi / 2.0, 0, pi / 3.0],
+    ),
+    .005 * s,
+    .02 * s, .01 * s, .02 * s
+), sphere(
+    *transform(
+        x, y, z,
+        scale=[1, 1, .5],
+        translate=[.5 + .0625 * s / 2.0, .5 - .04 * s, .5 + .02 * s],
+        euler_rotate=[0, pi / 4.0, 0],
+    ),
+    .01 * s,
+))
+
+inferior_process_l = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 1.0, .5 + .035 * s, .5 - .03 * s],
+        euler_rotate=[-pi / 2.0, 0, pi / 3.0],
+    ),
+    .005 * s,
+    .025 * s, .005 * s, .015 * s
+)
+
+inferior_process_l_sphere = sphere(
+    *transform(
+        x, y, z,
+        scale=[1, 1, .5],
+        translate=[.5 + .0625 * s / 1.75, .5 + .04 * s, .5 - .03 * s],
+        euler_rotate=[0, pi / 4.0, 0],
+    ),
+    .015 * s,
+)
+
+inferior_process_l_connection = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 1.5, .5 + .035 * s, .5 - .03 * s],
+        euler_rotate=[-pi / 2.0, 0, 0],
+    ),
+    .005 * s,
+    .01 * s, .015 * s, .01 * s
+)
+
+inferior_process_r = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 1.0, .5 - .035 * s, .5 - .03 * s],
+        euler_rotate=[-pi / 2.0, 0, pi / 3.0],
+    ),
+    .005 * s,
+    .025 * s, .005 * s, .015 * s
+)
+
+inferior_process_r_sphere = sphere(
+    *transform(
+        x, y, z,
+        scale=[1, 1, .5],
+        translate=[.5 + .0625 * s / 1.75, .5 - .04 * s, .5 - .03 * s],
+        euler_rotate=[0, pi / 4.0, 0],
+    ),
+    .015 * s,
+)
+
+inferior_process_r_connection = rounded_rect_prism(
+    *transform(
+        x, y, z,
+        translate=[.5 + .0625 * s / 1.5, .5 - .035 * s, .5 - .03 * s],
+        euler_rotate=[-pi / 2.0, 0, 0],
+    ),
+    .005 * s,
+    .01 * s, .015 * s, .01 * s
+)
+
+
+
+
+
+
