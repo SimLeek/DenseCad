@@ -1,8 +1,10 @@
+import pathlib
 from tkinter import *
 from tkinter import ttk
 from pathlib import Path
-
+from tkinter import filedialog, messagebox
 from biocad.core import get_grid, transform, show_all
+import open3d as o3d
 
 thresh = 1.0
 
@@ -36,6 +38,7 @@ from math import pi
 
 cached_obs = None
 
+
 def run_callback(*args):
     print(args)
     global thr, cached_obs
@@ -44,7 +47,7 @@ def run_callback(*args):
     loc = list(locals().items())
 
     cached_obs = [l[1] for l in loc if torch.is_tensor(l[1])]
-    #todo: cache these so they can be saved immedietely
+    # todo: cache these so they can be saved immedietely
     if len(cached_obs) > 0:
         if thr is not None:
             '''core.is_closed = True
@@ -66,7 +69,7 @@ def n_popup():
     toplevel = Toplevel()
     label1 = Label(toplevel, text="Enter the new grid size:", height=0, width=100)
     label1.pack()
-    label2 = Entry(toplevel,width=100)
+    label2 = Entry(toplevel, width=100)
     label2.pack()
 
     def n_change():
@@ -82,20 +85,66 @@ def n_popup():
     toplevel.focus_force()
 
 
+def export_dialog():
+    global cached_obs
+    if cached_obs is None or len(cached_obs) == 0:
+        try:
+            exec(t.get("1.0", 'end-1c'))
+            loc = list(locals().items())
+            cached_obs = [l[1] for l in loc if torch.is_tensor(l[1])]
+        except Exception as e:
+            messagebox.showerror("ERROR", "No objects are available to export. "
+                                          "generating current code gave error: " + str(e))
+            return
+        if len(cached_obs) == 0:
+            messagebox.showerror("ERROR", "No objects are available to export. "
+                                          "Code is error free, but generated no objects.")
+            return
+
+    f = filedialog.asksaveasfile(
+        mode='w',
+        defaultextension='.stl',
+        filetypes=[
+            ('StereoLithography', '*.stl'),
+            ('Object File', '*.obj'),
+            ('Polygon File Format', '*.ply'),
+            ('Object File Format', '*.off'),
+            ('GL Transmission Format', '*.gltf')
+        ]
+    )
+    if f is None:  # dialog was closed with cancel
+        return
+
+    ext = pathlib.Path(f.name).suffix
+
+    mesh = core.get_showable(cached_obs, rgb)[0]
+    if ext == '.stl':
+        norm_mesh = o3d.geometry.TriangleMesh.compute_triangle_normals(mesh)
+        o3d.io.write_triangle_mesh(f.name, norm_mesh)
+    else:
+        o3d.io.write_triangle_mesh(f.name, mesh)
+
+    messagebox.showinfo("Success", "Objects successfully exported!")
+
+
 run_png = str(Path.joinpath(Path(__file__).parent, "gui_icons", "run.png"))
 clear_png = str(Path.joinpath(Path(__file__).parent, "gui_icons", "clear.png"))
 grid_png = str(Path.joinpath(Path(__file__).parent, "gui_icons", "grid.png"))
+export_png = str(Path.joinpath(Path(__file__).parent, "gui_icons", "export.png"))
 
 run_photo = PhotoImage(file=run_png)
 clear_photo = PhotoImage(file=clear_png)
 grid_photo = PhotoImage(file=grid_png)
+export_photo = PhotoImage(file=export_png)
 
 Button(frm_top_buttons, text='Compile Object Code', image=run_photo, command=run_callback).pack(side=LEFT)
 Button(frm_top_buttons, text='Clear View', image=clear_photo).pack(side=LEFT)
 Button(frm_top_buttons, text='Setup Marching Cubes Grid', image=grid_photo, command=n_popup).pack(side=LEFT)
+Button(frm_top_buttons, text='Export Generated Object', image=export_photo, command=export_dialog).pack(side=LEFT)
 
 root.bind('<Control-r>', run_callback)
 root.bind('<Control-n>', n_popup)
+root.bind('<Control-e>', run_callback)
 
 ttk.Button(frm, text="Quit", command=root.destroy).grid(column=1, row=1)
 # t.pack()
