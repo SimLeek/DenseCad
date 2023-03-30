@@ -1,9 +1,11 @@
 from displayarray.frame.frame_updater import FrameUpdater
 from displayarray.input import key_loop
+from displayarray import display
 import torch
 from torchrender.pixel_shader import pixel_shader
 import numpy as np
 import cv2
+
 
 # todo: to get lines, finding the exact 0-intercept is mandatory because 2 pixels could be -400z and 400z
 #  with 0 in between. So to get the 0-intercept, you take the current pixel, the one to the right of it,
@@ -15,6 +17,7 @@ import cv2
 #  be given the x and y coordinates, -1 otherwise.
 
 def get_lines(is_equation):
+    pass
 
 
 # todo: run cv2.find_contours on the previous outcome (x or y) to get all the separate lines,
@@ -44,12 +47,13 @@ def get_lines(is_equation):
 # todo: show face numbers in UI
 # todo: make/use face ordering algorithm on convex/concave regions
 
-width = 1024
-height = 768
-img = np.zeros((height, width, 3))
+width = 1280
+height = 720
+img = np.zeros((height, width, 3), dtype=np.float32)
 
 from math import pi
 from torch import sin, cos, tan, abs, where
+
 
 def muscle_1(y, x):
     is_equation = (
@@ -94,7 +98,11 @@ def muscle_2(y, x):
 
     return closest
 
-py_equation:str = "y - torch.sin(x)"
+
+# instead of y=sin(x), do y-sin(x)
+# for parametric, solve for t in all equations
+py_equation: str = "y - torch.sin(x)"
+
 
 def eq(uv, ):
     y, x = uv
@@ -103,122 +111,117 @@ def eq(uv, ):
 
     # is_equation = torch.tan(x ** 2) + torch.tan(y ** 2) - 0
 
-    # is_equation = y - torch.sin(x)
+    #is_equation = y - torch.sin(x)
 
-    #is_equation = muscle_2(y,x)
+    is_equation = muscle_2(y,x)
 
-    is_equation = eval(py_equation)
+    # is_equation = eval(py_equation)
+
+    # is_equation = x ** 2 - 2 * x * y + y ** 2 - 2 * x - 2 * y
+    # is_equation = y - x
+    a=50
+    R= .05
+    start_angle = np.pi/4
+    arc = torch.arctan2(y,x-2.5)
+    is_equation = (((x-2.5)**2)+(y**2))-R**2*(1+(a*arc)**2)
+    #is_equation = torch.tan((a / torch.sqrt(x**2+y**2))+start_angle)*-R*x-R*y
+    #is_equation = np.tan(a) - a/(np.pi/2 - torch.arctan(x/y)) - y/x
+
+    #is_equation = torch.tan((a / torch.sqrt(x ** 2 + y ** 2)) + start_angle) * -R * x - R * y
 
     return is_equation
 
-
-bounds = ((-7, -7 * width / height), (7, 7 * width / height))
+cx, cy = 0, 0
+sx, sy = 10, 10 * width / height
+bounds = ((cx-sx/2., cy-sy/2.), (cx+sx/2., cy+sy/2.))
 
 zminmax = 1.0
 dist = 0.01
 
-def setup_shader(frame, coords, finished):
+
+class EQCallback(object):
+    def __init__(self):
+        self.first_run = True
+        self.uv = None
+        self.yellow = None
+        self.orange = None
+        self.red = None
+        self.r = self.y = self.o = None
+        self.out_array = None
+
+    def equation_callback(self, frame, coords, finished):
+        array = frame
+        array = array.permute(2, 1, 0)[None, ...]
+
+        x_mult = bounds[1][0] - bounds[0][0]
+        y_mult = bounds[1][1] - bounds[0][1]
+
+        # [..., 0] -> convert to black/white
+        if self.uv is None:
+            self.uv = (
+                coords[0][..., 0] / height * x_mult + bounds[0][0],
+                coords[1][..., 0] / width * y_mult + bounds[0][1]
+            )
+
+        x = eq(self.uv)
+
+        # eq to snap min/mix dist from equation to 0-1 so whole window is red/yellow
+        # However, it looked bad for some equations, so changed it to a variable that the user could modify
+        x = ((x + zminmax) / (zminmax + zminmax)) * 2 - 1
+        x = (x.permute(1, 0)[None, ...]).to(array.device)
+
+        if self.yellow is None:
+            self.yellow = (torch.tensor([0.0, 1.0, 1.0])[None, :, None, None]).to(array.device)
+            self.orange = (torch.tensor([0.0, 0.5, 1.0])[None, :, None, None]).to(array.device)
+            self.red = (torch.tensor([0.0, 0.0, 1.0])[None, :, None, None]).to(array.device)
+
+        if self.r is None:
+            self.r = torch.zeros_like(x)  # red
+            self.y = torch.zeros_like(x)  # orange
+            self.o = torch.zeros_like(x)  # yellow
+
+        x_more = x[...] > 0
+        x_less = x[...] < 0
+
+        self.r[...] = 0
+        self.o[...] = 0
+        self.y[...] = 0
+
+        self.r[...][x_more] = (1.0 - torch.clamp(x[...][x_more], max=1.0))
+        self.o[...][x_less] = (1.0 + torch.clamp(x[...][x_less], min=-1.0))
+        # original: y[...] = torch.where(torch.abs(x[:, :, ...]) < dist,1.0,0.0)
+        self.y[...] = (torch.abs(x[:, :, ...]) < dist).to(self.y.dtype)
+        if self.out_array is None:
+            self.out_array = torch.zeros_like(array)
+        self.out_array = torch.clamp(
+            self.r[:, None, ...] * self.red +
+            self.o[:, None, ...] * self.orange +
+            self.y[:, None, ...] * self.yellow,
+            min=0.0, max=1.0)
+
+        array = self.out_array.to(array.dtype)
+
+        array = array.squeeze().permute(2, 1, 0)
+        frame[coords] = array[coords]
 
 
-def equation_callback(frame, coords, finished):
-    array = frame
-    array = array.permute(2, 1, 0)[None, ...]
-
-    x_mult = bounds[1][0] - bounds[0][0]
-    y_mult = bounds[1][1] - bounds[0][1]
-
-    uv = (
-        coords[0] / height * x_mult + bounds[0][0],
-        coords[1] / width * y_mult + bounds[0][1]
-    )
-
-    # uv = (coords[0], coords[1])
-
-    x = eq(uv)
-
-    # eq to snap min/mix dist from equation to 0-1 so whole window is red/yellow
-    # However, it looked bad for some equations, so changed it to a variable that the user could modify
-    x = ((x + zminmax) / (zminmax + zminmax)) * 2 - 1
-
-    x = (x.permute(2, 1, 0)[None, ...]).to(array.device)
-
-    orange = (torch.tensor([0.0, 1.0, 1.0])[None, :, None, None]).to(array.device)
-    yellow = (torch.tensor([0.0, 0.5, 1.0])[None, :, None, None]).to(array.device)
-    red = (torch.tensor([0.0, 0.0, 1.0])[None, :, None, None]).to(array.device)
-
-    y = torch.ones_like(x)
-
-    # red
-    y[:, 0, ...][x[:, 0, ...] > 0] = (
-                                             1.0 - torch.minimum(
-                                         x[:, 0, ...][x[:, 0, ...] > 0],
-                                         torch.ones_like(x[:, 0, ...][x[:, 0, ...] > 0])
-                                     )) * red[0, 0, 0, 0]
-    y[:, 1, ...][x[:, 1, ...] > 0] = (
-                                             1.0 - torch.minimum(
-                                         x[:, 1, ...][x[:, 1, ...] > 0],
-                                         torch.ones_like(x[:, 1, ...][x[:, 1, ...] > 0])
-                                     )) * red[0, 1, 0, 0]
-    y[:, 2, ...][x[:, 2, ...] > 0] = (
-                                             1.0 - torch.minimum(
-                                         x[:, 2, ...][x[:, 2, ...] > 0],
-                                         torch.ones_like(x[:, 2, ...][x[:, 2, ...] > 0])
-                                     )) * red[0, 2, 0, 0]
-    # yellow
-    y[:, 0, ...][x[:, 0, ...] < 0] = (
-                                             1.0 + torch.maximum(
-                                         x[:, 0, ...][x[:, 0, ...] < 0],
-                                         -torch.ones_like(x[:, 0, ...][x[:, 0, ...] < 0])
-                                     )) * yellow[0, 0, 0, 0]
-    y[:, 1, ...][x[:, 1, ...] < 0] = (
-                                             1.0 + torch.maximum(
-                                         x[:, 1, ...][x[:, 1, ...] < 0],
-                                         -torch.ones_like(x[:, 1, ...][x[:, 1, ...] < 0])
-                                     )) * yellow[0, 1, 0, 0]
-    y[:, 2, ...][x[:, 2, ...] < 0] = (
-                                             1.0 + torch.maximum(
-                                         x[:, 2, ...][x[:, 2, ...] < 0],
-                                         -torch.ones_like(x[:, 2, ...][x[:, 2, ...] < 0])
-                                     )) * yellow[0, 2, 0, 0]
-
-    # orange
-    x[:, 0, ...] = torch.where(
-        torch.abs(x[:, 0, ...]) < dist,
-        torch.ones_like(x[:, 0, ...]) * orange[0, 0, 0, 0],
-        y[:, 0, ...]
-    )
-    x[:, 1, ...] = torch.where(
-        torch.abs(x[:, 1, ...]) < dist,
-        orange[0, 1, 0, 0],
-        y[:, 1, ...]
-    )
-    x[:, 2, ...] = torch.where(
-        torch.abs(x[:, 2, ...]) < dist,
-        orange[0, 2, 0, 0],
-        y[:, 2, ...]
-    )
-    '''x[:, 0, ...][torch.abs(x[:, 0, ...]) < 0.5] = orange[0, 0, 0, 0]
-    x[:, 1, ...][torch.abs(x[:, 1, ...]) < 0.5] = orange[0, 1, 0, 0]
-    x[:, 2, ...][torch.abs(x[:, 2, ...]) < 0.5] = orange[0, 2, 0, 0]
-
-    '''
-
-    array = x.to(array.dtype)
-
-    array = array.squeeze().permute(2, 1, 0)
-    frame[coords] = array[coords]
+eqc = EQCallback()
+equation_shader = pixel_shader(eqc.equation_callback)
 
 
-equation_shader = pixel_shader(equation_callback)
 
-
-# cw = 12
-# ch = 18
-# tl = f"{bounds[0][0]},{bounds[0][1]}"
-# br = f"{bounds[1][0]},{bounds[1][1]}"
-# cv2.putText(img, tl, (int(cw), int(ch)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (.5, .5, .5))
-# cv2.putText(img, br, (int(width - cw * (len(br)+2)), int(height - ch * .5)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
-#            (.5, .5, .5))
+def cv_display_info(arr):
+    cw = 12
+    ch = 18
+    tl = f"{bounds[0][0]},{bounds[0][1]}"
+    br = f"{bounds[1][0]},{bounds[1][1]}"
+    tr = f"{zminmax}, {dist}"
+    arr[...] = cv2.putText(arr, tl, (int(cw), int(ch)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (1.0, 1.0, 1.0))
+    arr[...] = cv2.putText(arr, br, (int(width - cw * (len(br)+2)), int(height - ch * .5)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
+               (1.0, 1.0, 1.0))
+    arr[...] = cv2.putText(arr, tr, (int(width - cw * (len(tr) + 2)), int(ch)),
+                           cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
+                           (1.0, 1.0, 1.0))
 
 @key_loop
 def keys(k):
@@ -226,24 +229,24 @@ def keys(k):
     if k == 'q':
         zminmax += 1.0
         equation_shader(img)
+        cv_display_info(img)
     elif k == 'a':
         zminmax -= 1
         equation_shader(img)
+        cv_display_info(img)
     elif k == 'e':
-        dist -= 0.01
-        equation_shader(img)
-    elif k == 'd':
         dist += 0.01
         equation_shader(img)
-    elif k == '1':
+        cv_display_info(img)
+    elif k == 'd':
+        dist -= 0.01
+        equation_shader(img)
+        cv_display_info(img)
 
-    '''elif k == 'w':
-        zmax -= 1
-    elif k == 's':
-        zmax += 1'''
 
     print(f'zminmax:{zminmax}, dist:{dist}')
 
 
 equation_shader(img)
-FrameUpdater(video_source=img).display()
+cv_display_info(img)
+d = display(img, blocking=True)

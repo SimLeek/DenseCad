@@ -201,7 +201,10 @@ def difference(obj_a, obj_b):
 
 
 def show_all(obj_list, rgb):
-    u = union(obj_list)
+    if len(obj_list)>=2:
+        u = union(obj_list)
+    else:
+        u = obj_list[0]
     show(rgb, u)
 
 

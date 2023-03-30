@@ -1,0 +1,3 @@
+git+https://github.com/tatsy/torchmcubes.git
+open3d
+torchrender

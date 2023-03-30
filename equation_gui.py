@@ -92,5 +92,5 @@ root.bind('<Control-r>', run_callback)
 root.bind('<Control-n>', n_popup)
 
 ttk.Button(frm, text="Quit", command=root.destroy).grid(column=1, row=1)
-# t.pack()
+#t.pack()
 root.mainloop()
