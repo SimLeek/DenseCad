@@ -1,3 +1,4 @@
+import copy
 from math import cos, sin
 
 import numpy as np
@@ -188,13 +189,13 @@ def intersection(obj_list):
 
 def difference(obj_a, obj_b):
     u = (
-        obj_a
-        -
-        torch.where(
-            obj_b != 0,
-            torch.divide(torch.ones_like(obj_b), obj_b),
-            torch.ones_like(obj_b) * torch.finfo(torch.float32).max
-        )
+            obj_a
+            -
+            torch.where(
+                obj_b != 0,
+                torch.divide(torch.ones_like(obj_b), obj_b),
+                torch.ones_like(obj_b) * torch.finfo(torch.float32).max
+            )
     )
     return u
 
@@ -202,3 +203,148 @@ def difference(obj_a, obj_b):
 def show_all(obj_list, rgb):
     u = union(obj_list)
     show(rgb, u)
+
+
+def machine_epsilon(func=float):
+    # https://en.wikipedia.org/wiki/Machine_epsilon#How_to_determine_machine_epsilon
+    eps = func(1)
+    while func(1) + eps != func(1):
+        machine_epsilon_last = eps
+        eps = func(eps) / func(2)
+    return machine_epsilon_last
+
+
+def central_difference_epsilon(func=float):
+    # https://en.wikipedia.org/wiki/Numerical_differentiation#Step_size
+    return machine_epsilon(func) ** (func(1) / func(3))
+
+
+def estimate_tangent_at_t(t, fx, fy, fz, func=float):
+    cde = central_difference_epsilon(func)
+    dx = (fx(t + cde) - fx(t - cde)) / (2 * cde)
+    dy = (fy(t + cde) - fy(t - cde)) / (2 * cde)
+    dz = (fz(t + cde) - fz(t - cde)) / (2 * cde)
+    tang_0 = np.asarray([dx, dy, dz])
+    n = np.linalg.norm(tang_0)
+    tang = tang_0 / n
+    return tang
+
+
+def estimate_normal_at_t(t, fx, fy, fz, func=float):
+    cde = central_difference_epsilon(func)
+
+    norm_0 = (estimate_tangent_at_t(t + cde, fx, fy, fz, func) - estimate_tangent_at_t(t - cde, fx, fy, fz, func)) / (
+            2 * cde)
+    me = machine_epsilon(func)
+    n = np.linalg.norm(norm_0)
+    if np.isclose(n, np.zeros_like(n), me*10):
+        raise NotImplementedError("Inputted function is not a curve. "
+                                  "Estimating normals currently only supports curves.")
+
+    normal = norm_0 / n
+    return normal
+
+
+def estimate_orientation_at_t(t, fx, fy, fz, func=float, order=(1,2,3)):
+    tang = estimate_tangent_at_t(t, fx, fy, fz, func)
+    norm = estimate_normal_at_t(t, fx, fy, fz, func)
+    cross = np.cross(tang, norm)
+
+    rotation_matrix = np.eye(3)
+
+    def sign(x):
+        s = np.sign(x)
+        if s==0:
+            return 1
+        else: return s
+
+    rotation_matrix[int(abs(order[0])-1), :3] = tang*sign(order[0])
+    rotation_matrix[int(abs(order[1])-1), :3] = norm*sign(order[1])
+    rotation_matrix[int(abs(order[2])-1), :3] = cross*sign(order[2])
+
+    return rotation_matrix
+
+
+def estimate_transform_at_t(t, fx, fy, fz, func=float, order=(1,2,3)):
+    rotation_matrix = estimate_orientation_at_t(t, fx, fy, fz, func, order)
+    location = np.asarray([fx(t), fy(t), fz(t)])
+    transform_matrix = np.eye(4)
+    transform_matrix[:3, :3] = rotation_matrix
+    transform_matrix[:3, 3] = location
+
+    #transform_matrix[int(abs(order[0])-1), 3] = location[0]*np.sign(order[0])
+    #transform_matrix[int(abs(order[1])-1), 3] = location[0]*np.sign(order[1])
+    #transform_matrix[int(abs(order[2])-1), 3] = location[0]*np.sign(order[2])
+
+
+    return transform_matrix
+
+
+import itertools as IT
+import collections.abc
+from typing import List, Any
+
+
+def flatten(iterable, ltypes=collections.abc.Iterable) -> List[Any]:
+    # https://stackoverflow.com/a/2158562/782170
+    remainder = iter(iterable)
+    while True:
+        try:
+            first = next(remainder)
+        except StopIteration:
+            break
+        if isinstance(first, ltypes) and not isinstance(first, (str, bytes)):
+            remainder = IT.chain(first, remainder)
+        else:
+            yield first
+
+
+def copy_along_parametric_curve(obj, fx, fy, fz, t_vals, func=float, r_order=(0,1,2)):
+    objs = []
+    if isinstance(obj, collections.abc.Iterable):
+        obj_group = list(flatten(obj))
+    else:
+        obj_group = [obj]
+
+    for t in t_vals:
+        for o in obj_group:
+            objs.append(copy.deepcopy(o).transform(estimate_transform_at_t(t, fx, fy, fz, func, order=r_order)))
+    return objs
+
+
+def place_list_along_parametric_curve(objs, fx, fy, fz, t_vals=None, func=float, r_order=(0,1,2)):
+    if t_vals is not None:
+        assert len(t_vals) == len(objs)
+    else:
+        t_vals = range(len(objs))
+
+    objs2 = []
+    for o in objs:
+        if isinstance(o, collections.abc.Iterable):
+            objs2.append(list(flatten(o)))
+        else:
+            objs2.append([o])
+
+    for t, o1 in enumerate(objs2):
+        for oi in o1:
+            objs.append(oi.transform(estimate_transform_at_t(t_vals[t], fx, fy, fz, func, order=r_order)))
+    return objs
+
+
+
+if __name__ == '__main__':
+    import numpy as np
+
+    print(f'central_difference_epsilon: {central_difference_epsilon(np.float64)}')
+    print(f'central_difference_epsilon: {central_difference_epsilon(np.float32)}')
+    print(f'central_difference_epsilon: {central_difference_epsilon(np.float16)}')
+    print(f'central_difference_epsilon: {central_difference_epsilon(float)}')
+
+
+    def line(t):
+        return t
+
+
+    print(f'curve orientation: \n{estimate_orientation_at_t(1.0, sin, cos, sin)}')
+
+    print(list(flatten([[1, 2, [3, 4]]])))

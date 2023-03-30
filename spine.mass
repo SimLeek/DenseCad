@@ -1,0 +1,24 @@
+spines = []
+for i in range(5):
+	spines.append(load(r'C:\Users\joshm\Documents\spine1.zmarch'))
+	spines[-1].translate((-60*i,0,0))
+
+
+r = R.from_euler('zyx',
+	[0, 90, 15], degrees=True
+)
+
+spines = copy_along_parametric_curve(
+        load(r'C:\Users\joshm\Documents\spine1.zmarch').center_mesh().rotate(r),
+        lambda x: np.sin(x*np.pi/6)*75,
+        lambda y:y*75,
+        lambda z: 0,
+        [1,2,3,4,5],
+)
+
+
+
+
+
+
+

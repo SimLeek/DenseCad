@@ -191,9 +191,3 @@ inferior_process_r_connection = rounded_rect_prism(
     .005 * s,
     .01 * s, .015 * s, .01 * s
 )
-
-
-
-
-
-
